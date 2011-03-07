@@ -225,11 +225,11 @@ static PyMethodDef SheepbugMethods[] =
     {"write_byte", sheepbug_write_byte, METH_VARARGS, "Write byte."}, 
     {"write_half", sheepbug_write_half, METH_VARARGS, "Write halfword."}, 
     {"write_word", sheepbug_write_word, METH_VARARGS, "Write word."}, 
-    {"write_add_bp", sheepbug_add_bp, METH_VARARGS, "Add breakpoint."}, 
-    {"write_remove_bp", sheepbug_remove_bp, METH_VARARGS, "Remove breakpoint."}, 
-    {"write_set_bp_opcode_on", sheepbug_set_bp_opcode_on, METH_VARARGS, "Set opcode bp on."}, 
-    {"write_set_bp_opcode", sheepbug_set_bp_opcode, METH_VARARGS, "Set opcode bp."}, 
-    {"write_set_bp_opcode_mask", sheepbug_set_bp_opcode_mask, METH_VARARGS, "Set opcode bp mask."}, 
+    {"add_bp", sheepbug_add_bp, METH_VARARGS, "Add breakpoint."}, 
+    {"remove_bp", sheepbug_remove_bp, METH_VARARGS, "Remove breakpoint."}, 
+    {"set_bp_opcode_on", sheepbug_set_bp_opcode_on, METH_VARARGS, "Set opcode bp on."}, 
+    {"set_bp_opcode", sheepbug_set_bp_opcode, METH_VARARGS, "Set opcode bp."}, 
+    {"set_bp_opcode_mask", sheepbug_set_bp_opcode_mask, METH_VARARGS, "Set opcode bp mask."}, 
     {NULL, NULL, 0, NULL}
 };
 
