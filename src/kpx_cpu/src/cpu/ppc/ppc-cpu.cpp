@@ -734,6 +734,9 @@ void powerpc_cpu::execute(uint32 entry)
 #endif
   do_interpret:
 	for (;;) {
+#if ENABLE_DEBUGGER
+        debugger_hook_pause();
+#endif
 		uint32 opcode = vm_read_memory_4(pc());
 		const instr_info_t *ii = decode(opcode);
 #if PPC_EXECUTE_DUMP_STATE

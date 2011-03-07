@@ -33,6 +33,9 @@
 #include "cpu/ppc/ppc-jit.hpp"
 #endif
 #include "cpu/ppc/ppc-instructions.hpp"
+#if ENABLE_DEBUGGER
+#include <set>
+#endif
 #include <vector>
 
 class powerpc_cpu
@@ -492,20 +495,15 @@ private:
 
 #if ENABLE_DEBUGGER
     void init_debugger();
+    void debugger_hook_pause();
     void debugger_hook_read(int sz, uint32 addr);
     void debugger_hook_write(int sz, uint32 addr);
     void debugger_hook_decode(uint32 opcode);
 
 public:
-    bool bp_read_on;
-    uint32 bp_read_addr;
-    uint32 bp_read_mask;
-    bool bp_write_on;
-    uint32 bp_write_addr;
-    uint32 bp_write_mask;
-    bool bp_exec_on;
-    uint32 bp_exec_addr;
-    uint32 bp_exec_mask;
+    std::set<uint32> bp_read_set;
+    std::set<uint32> bp_write_set;
+    std::set<uint32> bp_exec_set;
     bool bp_opcode_on;
     uint32 bp_opcode;
     uint32 bp_opcode_mask;

@@ -28,7 +28,9 @@
 
 // TODO error handling
 static powerpc_cpu *the_cpu;
+static volatile sig_atomic_t pause_requested;
 static PyObject *the_module;
+static PyObject *hook_pause_func;
 static PyObject *hook_read_func;
 static PyObject *hook_write_func;
 static PyObject *hook_decode_func;
@@ -128,64 +130,81 @@ extern "C"
         return Py_None;
     }
 
-    static PyObject *sheepbug_write_debug_reg(PyObject *self, PyObject *args)
+    static PyObject *sheepbug_add_bp(PyObject *self, PyObject *args)
     {
-        int reg;
-        long val;
-        int s = PyArg_ParseTuple(args, "il", &reg, &val);
-        switch (reg)
+        uint32 type;
+        uint32 addr;
+        int s = PyArg_ParseTuple(args, "ii", &type, &addr);
+        switch (type)
         {
         case 1:
-            if (val == 0)
-                the_cpu->bp_read_on = false;
-            else
-                the_cpu->bp_read_on = true;
+            the_cpu->bp_read_set.insert(addr);
             break;
         case 2:
-            the_cpu->bp_read_addr = (uint32)val;
+            the_cpu->bp_write_set.insert(addr);
             break;
         case 3:
-            the_cpu->bp_read_mask = (uint32)val;
-            break;
-        case 4:
-            if (val == 0)
-                the_cpu->bp_write_on = false;
-            else
-                the_cpu->bp_write_on = true;
-            break;
-        case 5:
-            the_cpu->bp_write_addr = (uint32)val;
-            break;
-        case 6:
-            the_cpu->bp_write_mask = (uint32)val;
-            break;
-        case 7:
-            if (val == 0)
-                the_cpu->bp_exec_on = false;
-            else
-                the_cpu->bp_exec_on = true;
-            break;
-        case 8:
-            the_cpu->bp_exec_addr = (uint32)val;
-            break;
-        case 9:
-            the_cpu->bp_exec_mask = (uint32)val;
-            break;
-        case 10:
-            if (val == 0)
-                the_cpu->bp_opcode_on = false;
-            else
-                the_cpu->bp_opcode_on = true;
-            break;
-        case 11:
-            the_cpu->bp_opcode = (uint32)val;
-            break;
-        case 12:
-            the_cpu->bp_opcode_mask = (uint32)val;
+            the_cpu->bp_exec_set.insert(addr);
             break;
         default:
-            printf("Invalid set_write_debug.\n");
+            printf("Invalid add_bp.\n");
         }
+        return Py_None;
+    }
+
+    static PyObject *sheepbug_remove_bp(PyObject *self, PyObject *args)
+    {
+        uint32 type;
+        uint32 addr;
+        int s = PyArg_ParseTuple(args, "ii", &type, &addr);
+        switch (type)
+        {
+        case 1:
+            the_cpu->bp_read_set.erase(addr);
+            break;
+        case 2:
+            the_cpu->bp_write_set.erase(addr);
+            break;
+        case 3:
+            the_cpu->bp_exec_set.erase(addr);
+            break;
+        default:
+            printf("Invalid add_bp.\n");
+        }
+        return Py_None;
+    }
+
+    static PyObject *sheepbug_set_bp_opcode_on(PyObject *self, PyObject *args)
+    {
+        uint32 flag;
+        int s = PyArg_ParseTuple(args, "i", &flag);
+        switch (flag)
+        {
+        case 0:
+            the_cpu->bp_opcode_on = false;
+            break;
+        case 1:
+            the_cpu->bp_opcode_on = true;
+            break;
+        default:
+            printf("Invalid set_bp_opcode_on.\n");
+        }
+        return Py_None;
+    }
+
+    static PyObject *sheepbug_set_bp_opcode(PyObject *self, PyObject *args)
+    {
+        uint32 val;
+        int s = PyArg_ParseTuple(args, "i", &val);
+        the_cpu->bp_opcode = val;
+        return Py_None;
+    }
+
+    static PyObject *sheepbug_set_bp_opcode_mask(PyObject *self, PyObject *args)
+    {
+        uint32 val;
+        int s = PyArg_ParseTuple(args, "i", &val);
+        the_cpu->bp_opcode_mask = val;
         return Py_None;
     }
 };
@@ -206,18 +225,34 @@ static PyMethodDef SheepbugMethods[] =
     {"write_byte", sheepbug_write_byte, METH_VARARGS, "Write byte."}, 
     {"write_half", sheepbug_write_half, METH_VARARGS, "Write halfword."}, 
     {"write_word", sheepbug_write_word, METH_VARARGS, "Write word."}, 
-    {"write_debug_reg", sheepbug_write_debug_reg, METH_VARARGS, "Write to debug reg."}, 
+    {"write_add_bp", sheepbug_add_bp, METH_VARARGS, "Add breakpoint."}, 
+    {"write_remove_bp", sheepbug_remove_bp, METH_VARARGS, "Remove breakpoint."}, 
+    {"write_set_bp_opcode_on", sheepbug_set_bp_opcode_on, METH_VARARGS, "Set opcode bp on."}, 
+    {"write_set_bp_opcode", sheepbug_set_bp_opcode, METH_VARARGS, "Set opcode bp."}, 
+    {"write_set_bp_opcode_mask", sheepbug_set_bp_opcode_mask, METH_VARARGS, "Set opcode bp mask."}, 
     {NULL, NULL, 0, NULL}
 };
 
 void sigusr1_handler(int signum)
 {
-    the_cpu->bp_opcode_on = !(the_cpu->bp_opcode_on);
+    pause_requested = 1;
+}
+
+void powerpc_cpu::debugger_hook_pause()
+{
+    if (pause_requested == 1)
+    {
+        pause_requested = 0;
+        PyObject *args = PyTuple_New(0);
+        PyObject *res = PyObject_CallObject(hook_pause_func, args);
+        Py_DECREF(args);
+        Py_DECREF(res);
+    }
 }
 
 void powerpc_cpu::debugger_hook_read(int sz, uint32 addr)
 {
-    if (bp_read_on && (addr & bp_read_mask) == bp_read_addr)
+    if (bp_read_set.count(addr) == 1)
     {
         PyObject *args = PyTuple_New(2);
         PyTuple_SetItem(args, 0, PyInt_FromLong(sz));
@@ -229,7 +264,7 @@ void powerpc_cpu::debugger_hook_read(int sz, uint32 addr)
 }
 void powerpc_cpu::debugger_hook_write(int sz, uint32 addr)
 {
-    if (bp_write_on && (addr & bp_write_mask) == bp_write_addr)
+    if (bp_write_set.count(addr) == 1)
     {
         PyObject *args = PyTuple_New(2);
         PyTuple_SetItem(args, 0, PyInt_FromLong(sz));
@@ -242,11 +277,12 @@ void powerpc_cpu::debugger_hook_write(int sz, uint32 addr)
 
 void powerpc_cpu::debugger_hook_decode(uint32 opcode)
 {
-    if ((bp_exec_on && (pc() & bp_exec_mask) == bp_exec_addr) ||
+    if ((bp_write_set.count(pc()) == 1) || 
         (bp_opcode_on && (opcode & bp_opcode_mask) == bp_opcode))
     {
-        PyObject *args = PyTuple_New(1);
-        PyTuple_SetItem(args, 0, PyInt_FromLong(opcode));
+        PyObject *args = PyTuple_New(2);
+        PyTuple_SetItem(args, 0, PyInt_FromLong(pc()));
+        PyTuple_SetItem(args, 1, PyInt_FromLong(opcode));
         PyObject *res = PyObject_CallObject(hook_decode_func, args);
         Py_DECREF(args);
         Py_DECREF(res);
@@ -256,8 +292,16 @@ void powerpc_cpu::debugger_hook_decode(uint32 opcode)
 void powerpc_cpu::init_debugger()
 {
     the_cpu = this;
+    pause_requested = 0;
+    bp_opcode_on = false;
 
-    signal(SIGUSR1, sigusr1_handler);
+    struct sigaction sa;
+    sa.sa_handler = sigusr1_handler;
+    sa.sa_flags = SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGUSR1);
+    sigaction(SIGUSR1, &sa, NULL);
+
     Py_Initialize();
     Py_InitModule("sheepbug", SheepbugMethods);
     PyRun_SimpleString("import sys");
@@ -281,6 +325,21 @@ void powerpc_cpu::init_debugger()
         Py_DECREF(init_func);
         Py_DECREF(the_module);
         printf("init_debugger is not callable.\n");
+        exit(42);
+    }
+
+    hook_pause_func = PyObject_GetAttrString(the_module, "hook_pause");
+    if (hook_pause_func == NULL)
+    {
+        Py_DECREF(the_module);
+        printf("Cannot find hook_pause function.\n");
+        exit(42);
+    }
+    if (!PyCallable_Check(hook_pause_func))
+    {
+        Py_DECREF(hook_pause_func);
+        Py_DECREF(the_module);
+        printf("hook_pause is not callable.\n");
         exit(42);
     }
 
@@ -328,14 +387,9 @@ void powerpc_cpu::init_debugger()
         printf("hook_decode is not callable.\n");
         exit(42);
     }
-    bp_read_on = false;
-    bp_write_on = false;
-    bp_exec_on = false;
-    bp_opcode_on = false;
 
     PyObject *args = PyTuple_New(0);
     PyObject *res = PyObject_CallObject(init_func, args);
     Py_DECREF(args);
     Py_DECREF(res);
-    //Py_DECREF(init_func); 
 }
